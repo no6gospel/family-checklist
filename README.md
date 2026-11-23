@@ -3,6 +3,7 @@
 가족끼리 아이디·비밀번호로 로그인해 체크리스트를 함께 쓰는 웹앱입니다.
 화면은 **GitHub Pages**, 로그인과 데이터는 **Supabase**를 사용합니다. 별도 서버나 빌드 도구는 필요 없습니다.
 
+- **2차 개발자는 먼저:** [docs/03_handoff.md](docs/03_handoff.md) — 1차 개발 정리, 구조, 반드시 지켜야 할 것
 - 설치: [docs/02_setup-guide.md](docs/02_setup-guide.md)
 - 기존 자료 검토 의견: [docs/01_review.md](docs/01_review.md)
 
