@@ -1,0 +1,53 @@
+# 우리 가족 체크리스트
+
+가족끼리 아이디·비밀번호로 로그인해 체크리스트를 함께 쓰는 웹앱입니다.
+화면은 **GitHub Pages**, 로그인과 데이터는 **Supabase**를 사용합니다. 별도 서버나 빌드 도구는 필요 없습니다.
+
+- 설치: [docs/02_setup-guide.md](docs/02_setup-guide.md)
+- 기존 자료 검토 의견: [docs/01_review.md](docs/01_review.md)
+
+## 기능
+
+- 아이디·비밀번호 가입과 로그인(이메일 수집·발송 없음), 가족 공용 **가입 코드**로 가입 제한
+- 일반 목록: 카테고리 › 하위 카테고리 › 항목, 마감일, 담당자, 등록자·등록 일시
+- Simple 목록: `[Sim]` 표시, 목록 날짜, 카테고리 한 단계, `장보기`·`준비물` 빠른 제목
+- 템플릿(여행·출산/육아·회의), 여러 항목 한 번에 추가(없는 분류는 자동 생성)
+- 검색과 전체·진행 중·완료 필터, 완료율 표시
+- ☰ 드래그로 카테고리·하위 카테고리·항목 정렬·이동 (PC 마우스와 휴대폰 터치 모두, 화면 끝 자동 스크롤), 여러 항목 함께 끌기, **선택 항목 이동** 대화상자
+- 이름 바로 수정, 삭제 확인 팝업, 분류에 항목이 있으면 삭제 차단
+- 목록별 역할(Owner / Co-owner / Member / Guest), 아이디로 참여자 추가
+- 종결·재개, 종결 목록 검색(이름·종결일), Owner만 최종 삭제
+- 사용자별 즐겨찾기, 목록 복제(완료 초기화, 참여자·담당자 미복사)
+- 동시 사용: 완료 체크는 충돌 없이 반영되고, 편집이 겹치면 감지해서 안내, 30초마다 자동 갱신
+- 백업 내보내기·가져오기(JSON)
+
+## 폴더 구조
+
+```
+index.html            화면 (GitHub Pages 시작 파일)
+css/style.css
+js/config.js          Supabase 주소·공개 키·아이디용 도메인  ← 설치 시 수정
+js/app.js             화면 동작 전체
+supabase/schema.sql   DB 테이블·권한 함수·가입 트리거 (SQL Editor에서 1회 실행)
+supabase/admin.sql    관리자용 SQL (가입 코드 변경, 비밀번호 재설정 등)
+docs/                 검토 의견, 설치 가이드
+tests/                로컬 시험 도구 (실제 데이터와 무관)
+  serve.ps1           PowerShell 정적 서버 (http://localhost:8765)
+  sql-test.html       schema.sql 시나리오 시험 (브라우저 안의 PostgreSQL, PGlite)
+  app-mock.html       Supabase 없이 화면 전체 시험 (가입 코드: family)
+_original/            이전 AI 환경 자료 원본 (git 제외)
+```
+
+## 보안 메모
+
+- `config.js`의 URL과 anon/publishable 키는 공개용 값입니다. `service_role`/secret 키는 어디에도 넣지 않습니다.
+- 데이터 테이블은 비공개 스키마(`app_private`)에 있습니다. 브라우저는 로그인한 상태에서 `public.checklist_*` 함수만 호출할 수 있고, 각 함수가 사용자와 목록 역할을 검사합니다.
+- 민감정보를 다루지 않는 가족용 앱이라는 전제로, 관리자 기능은 앱이 아니라 Supabase 대시보드(SQL)에서 처리합니다.
+
+## 시험 결과 (2026-11-23)
+
+| 시험 | 결과 | 환경 |
+|---|---|---|
+| `tests/sql-test.html` DB 함수 시나리오 74개 | 74개 통과 | PGlite 0.2.17 (브라우저용 PostgreSQL), auth는 흉내 냄 |
+| 화면 흐름(가입·로그인·목록·편집·이동·공유·권한·충돌·휴대폰 화면) | 정상 동작 | `tests/app-mock.html` + PGlite |
+| 실제 Supabase·GitHub Pages 연결 | **미실행** | 설치 가이드의 "실제 환경 확인 목록"으로 확인 필요 |

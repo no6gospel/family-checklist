@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>우리 가족 체크리스트</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23176752'/%3E%3Cpath d='M28 52l15 15 30-33' stroke='white' stroke-width='11' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div>
+        <div class="eyebrow">FAMILY CHECKLIST</div>
+        <h1>우리 가족 체크리스트</h1>
+      </div>
+      <div id="userbox"></div>
+    </header>
+    <div id="app"><p class="helper">불러오는 중…</p></div>
+  </div>
+
+  <dialog id="dlg" aria-labelledby="dlgTitle">
+    <div class="dialog-inner">
+      <div class="dialog-head">
+        <h2 id="dlgTitle"></h2>
+        <button type="button" class="icon-btn" data-action="close-dialog" aria-label="닫기">✕</button>
+      </div>
+      <div id="dlgBody"></div>
+    </div>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

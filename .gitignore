@@ -1,0 +1,16 @@
+# 원본 참고 자료 (실명 포함, 배포 불필요)
+_original/
+
+# 로컬 도구 설정
+.claude/settings.local.json
+
+# 백업 파일·비밀값
+*.backup.json
+checklist-backup-*.json
+.env
+.env.*
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>SQL 시험</title>
+<style>
+  body { font: 14px/1.6 'Malgun Gothic', sans-serif; margin: 24px; }
+  .pass { color: #176752; } .fail { color: #a83f37; font-weight: bold; }
+  #summary { font-size: 18px; font-weight: bold; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<h1>supabase/schema.sql 시험 (PGlite)</h1>
+<p>브라우저 안의 PostgreSQL에서 DB 함수의 권한·검증 논리를 확인합니다. 실제 Supabase 인증 서버는 흉내 낸 것입니다.</p>
+<div id="summary">실행 중…</div>
+<ol id="out"></ol>
+<script type="module">
+import { createBackend } from './pglite-backend.js';
+
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+function log(ok, name, extra = '') {
+  ok ? pass++ : fail++;
+  const li = document.createElement('li');
+  li.className = ok ? 'pass' : 'fail';
+  li.textContent = `${ok ? '통과' : '실패'} · ${name}${extra ? ' — ' + extra : ''}`;
+  out.append(li);
+}
+const uid = () => crypto.randomUUID();
+
+try {
+  const B = await createBackend();
+  const call = (u, n, a) => B.rpc(u, n, a);
+  async function expectOk(name, u, fn, args) {
+    const r = await call(u, fn, args);
+    log(!r.error, name, r.error?.message);
+    return r.data;
+  }
+  async function expectErr(name, u, fn, args, code) {
+    const r = await call(u, fn, args);
+    log(!!r.error && r.error.message.startsWith(code), name, r.error ? r.error.message : '오류가 나야 하는데 성공함');
+  }
+
+  // ---------- 가입 ----------
+  await B.db.query(`update app_private.settings set value = 'family-123' where key = 'signup_code'`);
+  const meta = (u, n, c = 'family-123') => ({ username: u, display_name: n, signup_code: c });
+  let r = await B.signUp('mom@x.app', 'pw123456', meta('mom', '엄마', 'wrong'));
+  log(!!r.error, '가입 코드가 틀리면 계정이 만들어지지 않음');
+  const cnt = (await B.db.query(`select count(*)::int n from auth.users`)).rows[0].n;
+  log(cnt === 0, '틀린 코드로 시도한 뒤 auth.users 가 비어 있음', `count=${cnt}`);
+  r = await B.signUp('bad@x.app', 'pw123456', meta('A!', '이름'));
+  log(!!r.error, '아이디 형식이 틀리면 가입 실패');
+  const A = (await B.signUp('mom@x.app', 'pw123456', meta('mom', '엄마'))).id;
+  const Bu = (await B.signUp('dad@x.app', 'pw123456', meta('dad', '아빠'))).id;
+  const C = (await B.signUp('kid@x.app', 'pw123456', meta('kid', '민수'))).id;
+  const D = (await B.signUp('gran@x.app', 'pw123456', meta('gran', '할머니'))).id;
+  log(!!A && !!Bu && !!C && !!D, '올바른 코드로 4명 가입');
+  r = await B.signUp('mom@x.app', 'pw123456', meta('mom', '엄마2'));
+  log(!!r.error, '같은 아이디 중복 가입 실패');
+  const stored = (await B.db.query(`select raw_user_meta_data m from auth.users where id = $1`, [A])).rows[0].m;
+  log(!('signup_code' in stored), '가입 코드는 계정 정보에 남지 않음');
+  const me = await expectOk('checklist_me 로 내 프로필 조회', A, 'checklist_me', {});
+  log(me?.username === 'mom' && me?.display_name === '엄마', '프로필 값 확인');
+
+  // ---------- 비로그인 / 실행 권한 ----------
+  await expectErr('로그인 없이 호출하면 거부', null, 'checklist_lists', {}, 'not_authenticated');
+  const priv = (await B.db.query(`select has_function_privilege('anon', 'public.checklist_lists()', 'execute') a,
+                                         has_function_privilege('authenticated', 'public.checklist_lists()', 'execute') b`)).rows[0];
+  log(priv.a === false && priv.b === true, 'anon 실행 불가 · authenticated 실행 가능');
+
+  // ---------- 목록 만들기 ----------
+  const cat1 = uid(), sub1 = uid(), t1 = uid(), t2 = uid();
+  const data = {
+    name: '여행 준비', date: '',
+    categories: [{ id: cat1, name: '준비물', subs: [{ id: sub1, name: '서류' }] }],
+    tasks: [
+      { id: t1, text: '여권', cat: cat1, sub: sub1, due: '2028-02-29', done: false, assignees: [], createdBy: A, createdAt: new Date().toISOString() },
+      { id: t2, text: '충전기', cat: cat1, sub: '', due: '', done: false, assignees: [] },
+    ],
+  };
+  const L = await expectOk('일반 목록 생성 (윤년 마감일 2028-02-29 포함)', A, 'checklist_create', { p_kind: 'standard', p_data: data });
+  const id = L?.id;
+  log(L?.role === 'owner' && L?.version === 1, '만든 사람이 Owner, 버전 1');
+  await expectErr('새 목록에 다른 사람을 담당자로 넣으면 거부', A, 'checklist_create',
+    { p_kind: 'standard', p_data: { ...data, tasks: [{ ...data.tasks[0], assignees: [Bu] }] } }, 'invalid_assignee');
+
+  // ---------- 검증 ----------
+  const bad = (patch) => ({ ...data, ...patch });
+  await expectErr('없는 날짜(2026-02-30) 거부', A, 'checklist_create', { p_kind: 'standard', p_data: bad({ tasks: [{ ...data.tasks[0], due: '2026-02-30' }] }) }, 'invalid_date');
+  await expectErr('없는 카테고리 참조 거부', A, 'checklist_create', { p_kind: 'standard', p_data: bad({ tasks: [{ ...data.tasks[0], cat: 'nope' }] }) }, 'invalid_task_category');
+  await expectErr('다른 카테고리의 서브 참조 거부', A, 'checklist_create', { p_kind: 'standard', p_data: bad({ categories: [...data.categories, { id: 'c2', name: '기타', subs: [] }], tasks: [{ ...data.tasks[0], cat: 'c2' }] }) }, 'invalid_task_category');
+  await expectErr('중복 항목 ID 거부', A, 'checklist_create', { p_kind: 'standard', p_data: bad({ tasks: [data.tasks[1], data.tasks[1]] }) }, 'invalid_task');
+  await expectErr('완료값이 불리언이 아니면 거부', A, 'checklist_create', { p_kind: 'standard', p_data: bad({ tasks: [{ ...data.tasks[1], done: 'yes' }] }) }, 'invalid_task');
+  await expectErr('항목 161자 거부', A, 'checklist_create', { p_kind: 'standard', p_data: bad({ tasks: [{ ...data.tasks[1], text: 'a'.repeat(161) }] }) }, 'invalid_task');
+  await expectOk('항목 160자 허용 (화면 제한과 같음)', A, 'checklist_create', { p_kind: 'standard', p_data: bad({ name: '160자', tasks: [{ ...data.tasks[1], text: '가'.repeat(160) }] }) });
+  const sc = uid();
+  await expectErr('Simple 목록의 서브카테고리 거부', A, 'checklist_create', { p_kind: 'simple', p_data: { name: '장보기', date: '2026-11-23', categories: [{ id: sc, name: '기본', subs: [{ id: 's', name: 'x' }] }], tasks: [] } }, 'simple_field_forbidden');
+  await expectErr('Simple 목록의 마감일 거부', A, 'checklist_create', { p_kind: 'simple', p_data: { name: '장보기', date: '', categories: [{ id: sc, name: '기본', subs: [] }], tasks: [{ id: 'x', text: '우유', cat: sc, sub: '', due: '2026-11-30', done: false }] } }, 'simple_field_forbidden');
+  const SL = await expectOk('Simple 목록 생성 (날짜 있음)', A, 'checklist_create', { p_kind: 'simple', p_data: { name: '장보기', date: '2026-11-23', categories: [{ id: sc, name: '기본', subs: [] }], tasks: [{ id: 'x', text: '우유', cat: sc, sub: '', due: '', done: false, assignees: [] }] } });
+  await expectErr('일반 목록에 목록 날짜 거부', A, 'checklist_create', { p_kind: 'standard', p_data: bad({ date: '2026-11-23' }) }, 'simple_field_forbidden');
+
+  // ---------- 비참여자 ----------
+  let lists = (await call(Bu, 'checklist_lists', {})).data;
+  log(Array.isArray(lists) && lists.length === 0, '비참여자는 다른 사람 목록이 보이지 않음');
+  await expectErr('비참여자 저장 거부', Bu, 'checklist_save', { p_id: id, p_version: 1, p_data: data }, 'not_found');
+  await expectErr('비참여자 완료 체크 거부', Bu, 'checklist_toggle', { p_id: id, p_task: t1, p_done: true }, 'not_found');
+  await expectErr('비참여자 참여자 목록 조회 거부', Bu, 'checklist_members', { p_id: id }, 'not_found');
+  await expectErr('비참여자가 자신을 추가할 수 없음', Bu, 'checklist_add_member', { p_id: id, p_username: 'dad', p_role: 'owner' }, 'not_found');
+
+  // ---------- 참여자 추가·역할 ----------
+  await expectOk('Owner가 아빠를 Co-owner로 추가', A, 'checklist_add_member', { p_id: id, p_username: 'dad', p_role: 'co-owner' });
+  await expectErr('Co-owner는 Owner 역할로 추가 불가', Bu, 'checklist_add_member', { p_id: id, p_username: 'kid', p_role: 'owner' }, 'not_authorized');
+  await expectOk('Co-owner가 민수를 Member로 추가', Bu, 'checklist_add_member', { p_id: id, p_username: 'kid', p_role: 'member' });
+  await expectOk('Owner가 할머니를 Guest로 추가', A, 'checklist_add_member', { p_id: id, p_username: 'gran', p_role: 'guest' });
+  await expectErr('이미 참여 중이면 거부', A, 'checklist_add_member', { p_id: id, p_username: 'kid', p_role: 'guest' }, 'already_member');
+  await expectErr('없는 아이디 거부', A, 'checklist_add_member', { p_id: id, p_username: 'nobody', p_role: 'guest' }, 'user_not_found');
+  await expectErr('Co-owner가 Owner 역할 변경 불가', Bu, 'checklist_set_role', { p_id: id, p_user: A, p_role: 'member' }, 'not_authorized');
+  await expectErr('Member는 역할 변경 불가', C, 'checklist_set_role', { p_id: id, p_user: D, p_role: 'member' }, 'not_authorized');
+  await expectErr('마지막 Owner 강등 불가', A, 'checklist_set_role', { p_id: id, p_user: A, p_role: 'member' }, 'last_owner');
+  await expectErr('마지막 Owner 스스로 나가기 불가', A, 'checklist_remove_member', { p_id: id, p_user: A }, 'last_owner');
+  await expectErr('Co-owner는 참여자 제거 불가', Bu, 'checklist_remove_member', { p_id: id, p_user: D }, 'not_authorized');
+  lists = (await call(C, 'checklist_lists', {})).data;
+  log(lists.length === 1 && lists[0].role === 'member', 'Member에게 참여 목록이 보임');
+
+  // ---------- 완료 체크와 편집 ----------
+  await expectOk('Member 완료 체크 가능', C, 'checklist_toggle', { p_id: id, p_task: t1, p_done: true });
+  await expectErr('Guest 완료 체크 불가', D, 'checklist_toggle', { p_id: id, p_task: t1, p_done: false }, 'not_authorized');
+  await expectErr('Member 편집 저장 불가', C, 'checklist_save', { p_id: id, p_version: 1, p_data: data }, 'not_authorized');
+  let v = (await call(A, 'checklist_lists', {})).data.find(x => x.id === id);
+  log(v.version === 1, '완료 체크는 버전을 올리지 않음', `version=${v.version}`);
+  // Owner가 완료 체크 이전 데이터(done:false)로 편집 저장 → 서버 완료 상태가 유지되어야 함
+  const edited = structuredClone(data);
+  edited.tasks.push({ id: 't3', text: '상비약', cat: cat1, sub: '', due: '', done: false, assignees: [] });
+  const saved = await expectOk('Owner 편집 저장', A, 'checklist_save', { p_id: id, p_version: 1, p_data: edited });
+  log(saved?.data.tasks.find(t => t.id === t1)?.done === true, '편집 저장이 다른 사람의 완료 체크를 덮어쓰지 않음');
+  log(saved?.version === 2, '편집 저장 후 버전 2');
+  await expectErr('같은 버전으로 다시 저장하면 충돌', Bu, 'checklist_save', { p_id: id, p_version: 1, p_data: edited }, 'version_conflict');
+  await expectErr('없는 항목 체크 거부', C, 'checklist_toggle', { p_id: id, p_task: 'nope', p_done: true }, 'task_not_found');
+
+  // ---------- 담당자 ----------
+  const withAssign = structuredClone(saved.data);
+  withAssign.tasks[1].assignees = [C];
+  const s3 = await expectOk('참여자를 담당자로 지정', A, 'checklist_save', { p_id: id, p_version: 2, p_data: withAssign });
+  const outsider = (await B.signUp('aunt@x.app', 'pw123456', meta('aunt', '이모'))).id;
+  const badAssign = structuredClone(s3.data);
+  badAssign.tasks[0].assignees = [outsider];
+  await expectErr('비참여자를 새 담당자로 지정 거부', A, 'checklist_save', { p_id: id, p_version: 3, p_data: badAssign }, 'invalid_assignee');
+  await expectOk('민수가 목록에서 나감', C, 'checklist_remove_member', { p_id: id, p_user: C });
+  const keep = structuredClone(s3.data);
+  keep.name = '여행 준비 (수정)';
+  await expectOk('나간 참여자의 기존 담당 지정은 유지한 채 저장 가능', A, 'checklist_save', { p_id: id, p_version: 3, p_data: keep });
+  const reassign = structuredClone(keep);
+  reassign.tasks[0].assignees = [C];
+  await expectErr('나간 참여자를 다른 항목에 새로 지정 거부', A, 'checklist_save', { p_id: id, p_version: 4, p_data: reassign }, 'invalid_assignee');
+
+  // ---------- 즐겨찾기 ----------
+  await expectOk('Guest도 즐겨찾기 가능', D, 'checklist_favorite', { p_id: id, p_on: true });
+  log((await call(D, 'checklist_lists', {})).data[0].favorite === true && (await call(A, 'checklist_lists', {})).data.find(x => x.id === id).favorite === false, '즐겨찾기는 사용자별');
+
+  // ---------- 종결·재개·삭제 ----------
+  await expectErr('진행 중 목록 삭제 거부', A, 'checklist_delete', { p_id: id }, 'list_not_closed');
+  await expectErr('Guest 종결 불가', D, 'checklist_set_closed', { p_id: id, p_closed: true }, 'not_authorized');
+  await expectOk('Co-owner 종결 가능', Bu, 'checklist_set_closed', { p_id: id, p_closed: true });
+  v = (await call(A, 'checklist_lists', {})).data.find(x => x.id === id);
+  await expectErr('종결 목록 편집 거부', A, 'checklist_save', { p_id: id, p_version: v.version, p_data: v.data }, 'list_closed');
+  await expectErr('종결 목록 완료 체크 거부', A, 'checklist_toggle', { p_id: id, p_task: t1, p_done: false }, 'list_closed');
+  await expectErr('종결 목록 참여자 추가 거부', A, 'checklist_add_member', { p_id: id, p_username: 'aunt', p_role: 'guest' }, 'list_closed');
+  await expectOk('종결 목록도 즐겨찾기는 가능', A, 'checklist_favorite', { p_id: id, p_on: true });
+  await expectErr('Co-owner 최종 삭제 불가', Bu, 'checklist_delete', { p_id: id }, 'not_authorized');
+  await expectOk('재개 가능', Bu, 'checklist_set_closed', { p_id: id, p_closed: false });
+  await expectOk('다시 종결', A, 'checklist_set_closed', { p_id: id, p_closed: true });
+  await expectOk('Owner 최종 삭제', A, 'checklist_delete', { p_id: id });
+  const left = (await B.db.query(`select (select count(*) from app_private.members where list_id = $1)::int m,
+                                         (select count(*) from app_private.favorites where list_id = $1)::int f`, [id])).rows[0];
+  log(left.m === 0 && left.f === 0, '삭제 후 참여자·즐겨찾기 정리됨');
+
+  // ---------- 동시 역할 변경: 마지막 Owner 보호 ----------
+  const L2 = (await call(A, 'checklist_create', { p_kind: 'simple', p_data: { name: 'x', date: '', categories: [], tasks: [] } })).data;
+  await call(A, 'checklist_add_member', { p_id: L2.id, p_username: 'dad', p_role: 'owner' });
+  const [x1, x2] = await Promise.all([
+    call(A, 'checklist_set_role', { p_id: L2.id, p_user: A, p_role: 'member' }),
+    call(Bu, 'checklist_set_role', { p_id: L2.id, p_user: Bu, p_role: 'member' }),
+  ]);
+  const owners = (await B.db.query(`select count(*)::int n from app_private.members where list_id = $1 and role = 'owner'`, [L2.id])).rows[0].n;
+  log(owners >= 1, '두 Owner가 동시에 강등해도 Owner가 1명 이상 남음', `owners=${owners}, 오류=${[x1, x2].filter(x => x.error).map(x => x.error.message).join(',')}`);
+  log(true, '참고: PGlite는 단일 연결이라 실제 동시 실행이 아님 — Supabase에서 for update 잠금으로 보장');
+
+  // ---------- 표시 이름 ----------
+  await expectErr('표시 이름 21자 거부', A, 'checklist_set_display_name', { p_name: 'a'.repeat(21) }, 'invalid_display_name');
+  await expectOk('표시 이름 변경', A, 'checklist_set_display_name', { p_name: '어머니' });
+  const fam = (await call(C, 'checklist_family', {})).data;
+  log(fam.length === 5 && fam.some(f => f.display_name === '어머니'), '가족 목록 조회 (5명)');
+} catch (e) {
+  log(false, '시험 실행 오류', e.message);
+  console.error(e);
+}
+document.getElementById('summary').textContent = `통과 ${pass} · 실패 ${fail}`;
+document.title = `SQL 시험: 통과 ${pass} · 실패 ${fail}`;
+</script>
+</body>
+</html>

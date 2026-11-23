@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>[시험] 우리 가족 체크리스트</title>
+  <link rel="stylesheet" href="../css/style.css">
+  <!-- 시험 전용: 실제 Supabase 대신 브라우저 안의 PGlite DB를 사용합니다. 가입 코드: family -->
+  <script type="importmap">
+  {
+    "imports": {
+      "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm": "/tests/mock-supabase.js",
+      "/js/config.js": "/tests/mock-config.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div>
+        <div class="eyebrow">FAMILY CHECKLIST · LOCAL TEST (가입 코드: family)</div>
+        <h1>우리 가족 체크리스트</h1>
+      </div>
+      <div id="userbox"></div>
+    </header>
+    <div id="app"><p class="helper">불러오는 중…</p></div>
+  </div>
+  <dialog id="dlg" aria-labelledby="dlgTitle">
+    <div class="dialog-inner">
+      <div class="dialog-head">
+        <h2 id="dlgTitle"></h2>
+        <button type="button" class="icon-btn" data-action="close-dialog" aria-label="닫기">✕</button>
+      </div>
+      <div id="dlgBody"></div>
+    </div>
+  </dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
