@@ -55,6 +55,7 @@ const ERR = {
   invalid_name: '목록 이름은 1~70자로 입력해 주세요.',
   not_public: '비공개로 바뀌었거나 없는 목록입니다. 목록을 새로 불러왔습니다.',
   request_not_found: '이미 처리된 참가 요청입니다.',
+  admin_protected: '관리자는 모든 목록의 Owner로 고정되어 있어 내보내거나 역할을 바꿀 수 없습니다.',
 };
 
 class AppError extends Error {
@@ -409,7 +410,7 @@ function renderAll() {
 
 function renderUserbox() {
   $('#userbox').innerHTML = S.me
-    ? `<span class="user-name">${esc(S.me.display_name)} (${esc(S.me.username)})</span>
+    ? `<span class="user-name">${esc(S.me.display_name)} (${esc(S.me.username)})</span>${S.me.is_admin ? '<span class="admin-badge">관리자</span>' : ''}
        <button type="button" class="small" data-action="account">내 계정</button>`
     : '';
 }
@@ -507,7 +508,7 @@ function renderMain() {
           ${p.edit ? '<button type="button" class="small" data-action="edit-list">목록 수정</button>' : ''}
         </div>
         <div class="members-line">
-          <span class="role-badge" title="${esc(ROLE_DESC[l.role])}">내 역할 · ${esc(ROLE_LABEL[l.role])}</span>
+          <span class="role-badge" title="${esc(ROLE_DESC[l.role])}">내 역할 · ${esc(ROLE_LABEL[l.role])}${S.me.is_admin ? ' (관리자)' : ''}</span>
           <span class="helper">${l.is_public ? '가족 공개' : '비공개'}</span>
           <button type="button" class="small ${l.pending ? 'primary' : ''}" data-action="members">멤버${l.pending ? ` · 참가 요청 ${l.pending}` : ''}</button>
         </div>
@@ -1185,10 +1186,12 @@ async function membersDialog() {
     .map(r => `<option value="${r}" ${r === selected ? 'selected' : ''} ${!allowOwner && r === 'owner' ? 'disabled' : ''}>${ROLE_LABEL[r]} · ${ROLE_DESC[r]}</option>`).join('');
   const rows = members.map(m => {
     const isMe = m.user_id === S.me.id;
-    const canChange = p.manage && (myRole === 'owner' || m.role !== 'owner');
-    const canRemove = !isMe && p.manage && myRole === 'owner';
+    // 관리자는 모든 목록의 Owner로 고정: 역할 변경·내보내기 불가
+    const canChange = !m.is_admin && p.manage && (myRole === 'owner' || m.role !== 'owner');
+    const canRemove = !m.is_admin && !isMe && p.manage && myRole === 'owner';
     return `<div class="member-row">
-      <div class="who"><b>${esc(m.display_name)}</b> <span class="helper">${esc(m.username)}${isMe ? ' · 나' : ''}</span></div>
+      <div class="who"><b>${esc(m.display_name)}</b> <span class="helper">${esc(m.username)}${isMe ? ' · 나' : ''}</span>
+        ${m.is_admin ? '<span class="admin-badge" title="모든 목록에 Owner로 자동 참가">관리자</span>' : ''}</div>
       ${canChange
         ? `<select data-action="set-role" data-user="${esc(m.user_id)}" aria-label="${esc(m.display_name)} 역할">${roleOptions(m.role, myRole === 'owner')}</select>`
         : `<span class="role-badge">${ROLE_LABEL[m.role]}</span>`}
@@ -1214,8 +1217,9 @@ async function membersDialog() {
     ${addForm}
     <div class="divider"></div>
     <div class="row" style="justify-content:space-between">
-      <span class="hint">권한: Owner 전체 · Co-owner 편집·종결·추가 · Member 완료 체크 · Guest 보기</span>
-      <button type="button" class="small" data-action="leave-list">이 목록에서 나가기</button>
+      <span class="hint">권한: Owner 전체 · Co-owner 편집·종결·추가 · Member 완료 체크 · Guest 보기${
+        members.some(m => m.is_admin) ? ' · 관리자는 모든 목록의 Owner로 고정' : ''}</span>
+      ${S.me.is_admin ? '' : '<button type="button" class="small" data-action="leave-list">이 목록에서 나가기</button>'}
     </div>`);
 }
 

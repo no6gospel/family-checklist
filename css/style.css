@@ -81,6 +81,7 @@ summary.section-title { cursor: pointer; }
 .list-btn.active { background: var(--accent-soft); font-weight: bold; color: var(--accent); }
 .list-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-count { font-size: 12px; color: var(--muted); flex: none; }
+.admin-badge { display: inline-block; margin-left: 6px; font-size: 11px; font-weight: 700; color: #fff; background: #7a4fb0; border-radius: 99px; padding: 2px 8px; vertical-align: middle; }
 .req-badge { background: var(--warn-bg); color: var(--warn-ink); border-radius: 99px; padding: 1px 7px; font-weight: 700; font-size: 11px; }
 .pub-row { border: 1px dashed var(--line); border-radius: 8px; padding: 9px 10px; margin: 6px 0; }
 .pub-name { font-weight: 600; overflow-wrap: anywhere; }

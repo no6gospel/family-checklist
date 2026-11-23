@@ -60,6 +60,20 @@ on conflict (list_id, user_id) do update set role = 'owner';
 
 
 -- ---------------------------------------------------------------------
+-- 7. 서비스 관리자(admin) 지정 / 해제
+--    관리자는 모든 목록(비공개 포함)에 Owner로 자동 참가하며, 다른 사람이 내보내거나 강등할 수 없습니다.
+--    지정하는 순간 기존 목록 전체에 Owner로 들어갑니다.
+-- ---------------------------------------------------------------------
+update app_private.profiles set is_admin = true where username = '<아이디>';
+
+-- 현재 관리자 확인
+select username, display_name from app_private.profiles where is_admin;
+
+-- 해제 (참여 정보는 남습니다. 필요하면 각 목록의 Owner가 멤버 창에서 내보내면 됩니다)
+update app_private.profiles set is_admin = false where username = '<아이디>';
+
+
+-- ---------------------------------------------------------------------
 -- 6. 사용량 확인 (목록 수, 항목 수)
 -- ---------------------------------------------------------------------
 select count(*) as lists,
