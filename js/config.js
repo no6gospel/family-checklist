@@ -6,8 +6,8 @@
 // ⚠️ service_role / secret 키는 절대 여기에 넣지 마십시오.
 // =====================================================================
 
-export const SUPABASE_URL = 'https://YOUR-PROJECT-REF.supabase.co';
-export const SUPABASE_ANON_KEY = 'YOUR-ANON-OR-PUBLISHABLE-KEY';
+export const SUPABASE_URL = 'https://uwczzzbewswkuvgooclo.supabase.co';
+export const SUPABASE_ANON_KEY = 'sb_publishable_dvtNJ24heyldwumvPEXvGA_kpiWtJBI';
 
 // 아이디를 Supabase 로그인용 이메일로 바꿀 때 붙이는 도메인입니다. (메일은 보내지 않습니다)
 //   예: 아이디 mom → mom@family-checklist.app
