@@ -303,7 +303,9 @@ function authErrorMessage(error, mode) {
     return '로그인하지 못했습니다. 잠시 후 다시 시도해 주세요.';
   }
   if (/already registered|already exists/i.test(msg) || code === 'user_already_exists') return '이미 사용 중인 아이디입니다.';
-  if (/database error/i.test(msg)) return '가입 코드가 맞지 않습니다. 가족 관리자에게 가입 코드를 확인해 주세요.';
+  if (/invalid_username/.test(msg)) return '아이디는 영문 소문자·숫자·밑줄(_) 3~20자로 입력해 주세요.';
+  if (/invalid_display_name/.test(msg)) return '표시 이름은 1~20자로 입력해 주세요.';
+  if (/invalid_signup_code|database error/i.test(msg)) return '가입 코드가 맞지 않습니다. 가족 관리자에게 가입 코드를 확인해 주세요.';
   if (/email address .* invalid|email_address_invalid/i.test(msg) || code === 'email_address_invalid') {
     return '관리자 설정 문제로 가입할 수 없습니다. (config.js의 EMAIL_DOMAIN 확인 필요)';
   }
