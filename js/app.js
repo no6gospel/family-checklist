@@ -136,6 +136,17 @@ const putList = l => {
 const rememberSel = () => { try { localStorage.setItem('checklist.sel', S.sel ?? ''); } catch { /* 저장 불가 환경 무시 */ } };
 const recallSel = () => { try { return localStorage.getItem('checklist.sel') || null; } catch { return null; } };
 
+// 카테고리 접기 상태: 사용자별·기기별로 이 브라우저에만 저장 ({ 목록id: [카테고리id, ...] })
+let collapsed = {};
+try { collapsed = JSON.parse(localStorage.getItem('checklist.collapsed') || '{}') || {}; } catch { collapsed = {}; }
+const isCollapsed = (listId, catId) => !!collapsed[listId]?.includes(catId);
+function setCollapsed(listId, catIds, on) {
+  const set = new Set(collapsed[listId] ?? []);
+  catIds.forEach(id => (on ? set.add(id) : set.delete(id)));
+  if (set.size) collapsed[listId] = [...set]; else delete collapsed[listId];
+  try { localStorage.setItem('checklist.collapsed', JSON.stringify(collapsed)); } catch { /* 저장 불가 환경 무시 */ }
+}
+
 function ensureSelection() {
   if (!cur()) S.sel = sortedActive()[0]?.id ?? S.lists[0]?.id ?? null;
 }
@@ -517,6 +528,8 @@ function renderMain() {
         <option value="open" ${S.filter === 'open' ? 'selected' : ''}>진행 중</option>
         <option value="done" ${S.filter === 'done' ? 'selected' : ''}>완료</option>
       </select>
+      ${l.data.categories.length > 1 ? `<button type="button" class="small" data-action="fold-all">${
+        l.data.categories.every(c => isCollapsed(l.id, c.id)) ? '모두 펼치기' : '모두 접기'}</button>` : ''}
     </div>
     <div id="pickedBar"></div>
     ${p.edit ? '<p class="helper" style="margin-top:8px">☰ 를 누른 채 끌어서 순서·분류를 바꿉니다(휴대폰도 동일). 여러 항목은 선택 상자를 체크한 뒤 그중 하나의 ☰ 를 끌면 함께 옮겨집니다.</p>' : ''}
@@ -560,9 +573,9 @@ function renderGroups() {
         ${meta.length ? `<div class="meta">${meta.join(' · ')}</div>` : ''}
       </div>
       <div class="task-actions">
-        <button type="button" data-action="detail" data-id="${esc(t.id)}">상세</button>
-        ${p.edit ? `<button type="button" data-action="delete-task" data-id="${esc(t.id)}">삭제</button>
-        <input type="checkbox" class="pick" data-action="pick" data-id="${esc(t.id)}" aria-label="${esc(t.text)} 이동 선택" ${S.picked.has(t.id) ? 'checked' : ''}>
+        <span class="task-links"><button type="button" data-action="detail" data-id="${esc(t.id)}">상세</button>${p.edit
+          ? `<button type="button" data-action="delete-task" data-id="${esc(t.id)}">삭제</button>` : ''}</span>
+        ${p.edit ? `<input type="checkbox" class="pick" data-action="pick" data-id="${esc(t.id)}" aria-label="${esc(t.text)} 이동 선택" ${S.picked.has(t.id) ? 'checked' : ''}>
         <span class="grip" data-drag="task" data-id="${esc(t.id)}" title="끌어서 이동" aria-hidden="true">☰</span>` : ''}
       </div></div>`;
   };
@@ -577,20 +590,26 @@ function renderGroups() {
     return `<div data-drop="bucket" data-cat="${esc(cat.id)}" data-sub="${esc(sub)}">${rows}${quick}</div>`;
   };
 
-  const html = l.data.categories.map(cat => `
-    <section class="group" data-drop="category" data-id="${esc(cat.id)}">
+  const html = l.data.categories.map(cat => {
+    const catTasks = l.data.tasks.filter(t => t.cat === cat.id);
+    const catDone = catTasks.filter(t => t.done).length;
+    const folded = isCollapsed(l.id, cat.id) && !q;      // 검색 중에는 접힌 카테고리도 펼쳐서 결과 표시
+    return `
+    <section class="group ${folded ? 'folded' : ''}" data-drop="category" data-id="${esc(cat.id)}">
       <div class="group-head">
         <div class="cat-title">
           ${p.edit ? `<span class="grip" data-drag="category" data-id="${esc(cat.id)}" title="끌어서 이동" aria-hidden="true">☰</span>` : ''}
           <h3><span data-name="cat" data-id="${esc(cat.id)}">${esc(cat.name)}</span>
-            ${p.edit ? `<button type="button" class="link" data-action="rename" data-kind="cat" data-id="${esc(cat.id)}">(수정)</button>` : ''}
-            <small>${l.data.tasks.filter(t => t.cat === cat.id).length}개</small></h3>
+            ${p.edit ? `<button type="button" class="link" data-action="rename" data-kind="cat" data-id="${esc(cat.id)}">(수정)</button>` : ''}</h3>
+          <span class="cat-count${catTasks.length && catDone === catTasks.length ? ' all-done' : ''}">항목 ${catTasks.length}개 / 완료 ${catDone}개</span>
+          <button type="button" class="link fold-btn" data-action="fold" data-id="${esc(cat.id)}" aria-expanded="${!folded}"
+            aria-label="${esc(cat.name)} ${folded ? '펼치기' : '접기'}">${folded ? '펼치기 ▾' : '접기 ▴'}</button>
         </div>
-        <div class="row">
+        <div class="row cat-tools">
           ${p.edit && l.kind === 'standard' ? `<button type="button" class="small" data-action="add-sub" data-id="${esc(cat.id)}">＋ 하위</button>` : ''}
           ${p.edit ? `<button type="button" class="small" data-action="delete-cat" data-id="${esc(cat.id)}">삭제</button>` : ''}</div>
       </div>
-      ${bucket(cat, '')}
+      ${folded ? '' : `${bucket(cat, '')}
       ${(cat.subs || []).map(s => `
         <div class="subgroup" data-drop="subcategory" data-id="${esc(s.id)}" data-cat="${esc(cat.id)}">
           <div class="sub-head">
@@ -603,8 +622,9 @@ function renderGroups() {
               ${p.edit ? `<button type="button" class="small" data-action="delete-sub" data-id="${esc(s.id)}" data-cat="${esc(cat.id)}">삭제</button>` : ''}</div>
           </div>
           ${bucket(cat, s.id)}
-        </div>`).join('')}
-    </section>`).join('');
+        </div>`).join('')}`}
+    </section>`;
+  }).join('');
 
   let note = '';
   if (!l.data.categories.length) note = `<p class="helper">${p.edit ? '아래 [＋ 카테고리 추가]로 시작해 주세요.' : '아직 항목이 없습니다.'}</p>`;
@@ -1364,6 +1384,14 @@ document.addEventListener('click', async e => {
     }
     case 'final-delete': case 'delete-task': case 'delete-cat': case 'delete-sub': return askDelete(b);
     case 'members': return membersDialog();
+    case 'fold':
+      setCollapsed(l.id, [b.dataset.id], !isCollapsed(l.id, b.dataset.id));
+      return renderGroups();
+    case 'fold-all': {
+      const ids = l.data.categories.map(c => c.id);
+      setCollapsed(l.id, ids, !ids.every(id => isCollapsed(l.id, id)));
+      return renderMain();
+    }
     case 'detail': return detailDialog(b.dataset.id);
     case 'toggle': return toggleTask(b.dataset.id);
   }

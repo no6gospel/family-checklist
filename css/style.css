@@ -110,7 +110,14 @@ summary.section-title { cursor: pointer; }
 .group-head, .sub-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .group-head h3 { font-size: 15px; }
 .group-head small { font-weight: 400; color: var(--muted); }
-.cat-title, .sub-title { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.cat-title, .sub-title { display: flex; gap: 6px; align-items: center; min-width: 0; flex-wrap: wrap; }
+.cat-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cat-count.all-done { color: var(--accent); font-weight: 600; }
+.fold-btn { font-size: 12px; color: var(--accent); padding: 4px 6px; }
+.group.folded { padding-bottom: 12px; }
+.group.folded .group-head { margin-bottom: 0; }
+.task-links { display: inline-flex; gap: 2px; }
+.task-links > button { border: 0; background: transparent; padding: 4px 6px; font-size: 12px; min-height: 30px; }
 .cat-title h3, .sub-title h4 { min-width: 0; overflow-wrap: anywhere; }
 .subgroup { margin: 8px 0 0 22px; border-left: 2px solid #e2ece5; padding-left: 12px; position: relative; }
 .subgroup h4 { margin: 8px 0; color: #617a6e; font-size: 13px; }
@@ -188,19 +195,59 @@ dialog::backdrop { background: #14292080; }
 
 /* ---------- 휴대폰 ---------- */
 @media (max-width: 800px) {
-  .shell { padding: 16px 12px 60px; }
-  .top h1 { font-size: 20px; }
-  .layout { grid-template-columns: 1fr; }
-  .main { min-height: 0; padding: 18px 14px; }
-  .hero { flex-direction: column; }
-  .actions { justify-content: flex-start; }
+  /* 바깥 여백 */
+  .shell { padding: 10px 10px 48px; }
+  .top { margin-bottom: 10px; }
+  .top h1 { font-size: 19px; }
+  .eyebrow { margin-bottom: 2px; }
+  .layout { grid-template-columns: 1fr; gap: 10px; }
+  .sidebar { padding: 12px; }
+  .side-head { margin-bottom: 4px; }
+  .section-title { margin: 10px 3px 4px; }
+  .list-btn { padding: 7px 8px; margin: 1px 0; }
+  .side-tools { margin-top: 12px; padding-top: 10px; }
+  .main { min-height: 0; padding: 14px 12px; }
+
+  /* 목록 머리 */
+  .hero { flex-direction: column; gap: 8px; }
+  .hero h2 { font-size: 20px; }
+  .tag { margin-bottom: 4px; }
+  .members-line { margin-top: 6px; }
+  .actions { justify-content: flex-start; gap: 5px; }
+  .actions > button { padding: 6px 10px; min-height: 32px; }
+  .closed-note { margin-top: 10px; }
+  .stats { margin: 10px 0; gap: 10px; }
+  .stats strong { font-size: 20px; }
+  .toolbar { padding-top: 10px; gap: 5px; }
+  .toolbar .search, .toolbar select { padding: 8px; }
+  .groups { margin-top: 8px; }
   .twocol { grid-template-columns: 1fr; }
-  .subgroup { margin-left: 8px; padding-left: 9px; }
-  .task { flex-wrap: wrap; }
-  .task-body { flex: 1 1 140px; }
-  .task-actions { margin-left: auto; }
-  .quick-add { flex-wrap: wrap; }
-  .quick-add input { flex-basis: 100%; }
+
+  /* 카테고리 */
+  .group { padding: 8px 0 2px; }
+  .group.folded { padding-bottom: 8px; }
+  .group-head { flex-wrap: wrap; gap: 2px 8px; }
+  .cat-tools .small { padding: 4px 8px; min-height: 28px; }
+  .subgroup { margin: 2px 0 0 6px; padding-left: 8px; }
+  .subgroup h4 { margin: 4px 0; }
+
+  /* 항목: [완료] [내용 + 상세·삭제] [선택] [☰] 한 덩어리 */
+  .task {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+    column-gap: 6px; row-gap: 0; align-items: center; padding: 4px 0;
+  }
+  .task > .done-btn { grid-column: 1; grid-row: 1 / span 2; min-width: 50px; padding: 5px 7px; min-height: 32px; }
+  .task-body { grid-column: 2; grid-row: 1; }
+  .task-title { line-height: 1.35; }
+  .meta { margin-top: 0; }
+  .task-actions { display: contents; }
+  .task-links { grid-column: 2; grid-row: 2; justify-self: start; margin-left: -6px; }
+  .task-links > button { min-height: 26px; padding: 2px 6px; color: var(--muted); }
+  .task .pick { grid-column: 3; grid-row: 1 / span 2; margin: 0 2px; }
+  .task .grip { grid-column: 4; grid-row: 1 / span 2; }
+
+  .quick-add { flex-wrap: wrap; margin: 6px 0; gap: 5px; }
+  .quick-add input { flex-basis: 100%; padding: 8px; }
 }
 /* 터치 기기: ☰ 손잡이를 손가락으로 잡기 쉽게 크게 */
 @media (pointer: coarse) {
