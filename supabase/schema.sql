@@ -110,6 +110,20 @@ create trigger checklist_after_signup
   after insert on auth.users
   for each row execute function app_private.after_signup();
 
+-- Supabase Auth는 가입 직후 사용자 정보를 한 번 더 저장(update)하므로, 그때도 가입 코드를 지웁니다.
+create function app_private.strip_signup_code() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.raw_user_meta_data ? 'signup_code' then
+    new.raw_user_meta_data := new.raw_user_meta_data - 'signup_code';
+  end if;
+  return new;
+end $$;
+
+create trigger checklist_strip_signup_code
+  before update on auth.users
+  for each row execute function app_private.strip_signup_code();
+
 -- ---------------------------------------------------------------------
 -- 3. 내부 도우미 함수
 -- ---------------------------------------------------------------------
@@ -525,6 +539,7 @@ end $$;
 -- ---------------------------------------------------------------------
 -- drop trigger if exists checklist_before_signup on auth.users;
 -- drop trigger if exists checklist_after_signup on auth.users;
+-- drop trigger if exists checklist_strip_signup_code on auth.users;
 -- drop function if exists public.checklist_me, public.checklist_set_display_name, public.checklist_family,
 --   public.checklist_lists, public.checklist_create, public.checklist_save, public.checklist_toggle,
 --   public.checklist_set_closed, public.checklist_delete, public.checklist_favorite, public.checklist_members,
