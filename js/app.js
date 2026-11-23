@@ -53,6 +53,8 @@ const ERR = {
   simple_field_forbidden: 'Simple 목록에서는 서브카테고리·담당자·마감일을 쓸 수 없습니다.',
   invalid_date: '날짜가 올바르지 않습니다.',
   invalid_name: '목록 이름은 1~70자로 입력해 주세요.',
+  not_public: '비공개로 바뀌었거나 없는 목록입니다. 목록을 새로 불러왔습니다.',
+  request_not_found: '이미 처리된 참가 요청입니다.',
 };
 
 class AppError extends Error {
@@ -98,6 +100,7 @@ const S = {
   me: null,            // { id, username, display_name }
   family: [],          // 가족 전체 프로필
   lists: [],           // 내가 참여한 목록
+  publicLists: [],     // 내가 참여하지 않은 가족 공개 목록 (이름·요약만)
   sel: null,           // 선택한 목록 id
   search: '',
   filter: 'all',       // all | open | done
@@ -186,16 +189,16 @@ function closePop() { $('.pop')?.remove(); S.pop = null; }
 // 데이터 불러오기 / 저장
 // ---------------------------------------------------------------------
 async function loadAll() {
-  const [me, family, lists] = await Promise.all([rpc('checklist_me'), rpc('checklist_family'), rpc('checklist_lists')]);
-  S.me = me; S.family = family; S.lists = lists;
+  const [me, family, lists, pub] = await Promise.all([rpc('checklist_me'), rpc('checklist_family'), rpc('checklist_lists'), rpc('checklist_public_lists')]);
+  S.me = me; S.family = family; S.lists = lists; S.publicLists = pub;
   if (!S.sel) S.sel = recallSel();
   ensureSelection();
 }
 
 async function refreshLists() {
   try {
-    const [lists, family] = await Promise.all([rpc('checklist_lists'), rpc('checklist_family')]);
-    S.lists = lists; S.family = family;
+    const [lists, family, pub] = await Promise.all([rpc('checklist_lists'), rpc('checklist_family'), rpc('checklist_public_lists')]);
+    S.lists = lists; S.family = family; S.publicLists = pub;
     ensureSelection();
   } catch (e) { toast(e.message, true); }
 }
@@ -264,15 +267,16 @@ async function listAction(fn) {
 }
 
 // 30초마다, 그리고 화면으로 돌아올 때 최신 상태 확인 (편집 중이면 건너뜀)
-const signature = lists => lists.map(l => `${l.id}:${l.version}:${l.updated_at}:${l.role}:${l.favorite}`).join('|');
+const signature = (lists, pub) => lists.map(l => `${l.id}:${l.version}:${l.updated_at}:${l.role}:${l.favorite}:${l.pending}:${l.is_public}`).join('|')
+  + '#' + pub.map(p => `${p.id}:${p.name}:${p.tasks}:${p.requested}`).join('|');
 async function maybeRefresh() {
   const busy = () => !S.me || document.hidden || S.pending || S.editing || S.drag || dialogOpen() || $('.pop');
   if (busy()) return;
   try {
-    const lists = await rpc('checklist_lists');
+    const [lists, pub] = await Promise.all([rpc('checklist_lists'), rpc('checklist_public_lists')]);
     if (busy()) return;
-    if (signature(lists) !== signature(S.lists)) {
-      S.lists = lists;
+    if (signature(lists, pub) !== signature(S.lists, S.publicLists)) {
+      S.lists = lists; S.publicLists = pub;
       ensureSelection();
       renderAll();
     }
@@ -435,7 +439,16 @@ function renderSidebar() {
   if (!box) return;
   const count = l => `${l.data.tasks.filter(t => t.done).length}/${l.data.tasks.length}`;
   const btn = l => `<button type="button" class="list-btn ${l.id === S.sel ? 'active' : ''}" data-action="select" data-id="${esc(l.id)}">
-      <span class="list-name">${l.favorite ? '★ ' : ''}${esc(listTitle(l))}</span><span class="list-count">${count(l)}</span></button>`;
+      <span class="list-name">${l.favorite ? '★ ' : ''}${esc(listTitle(l))}</span>
+      <span class="list-count">${l.pending ? `<span class="req-badge" title="참가 요청">요청 ${l.pending}</span> ` : ''}${count(l)}</span></button>`;
+  const pubRow = p => {
+    const title = (p.kind === 'simple' ? '[Sim] ' : '') + p.name + (p.kind === 'simple' && p.date ? ' · ' + p.date : '');
+    const action = p.requested
+      ? `<span class="helper">승인 대기 중</span> <button type="button" class="small" data-action="cancel-join" data-id="${esc(p.id)}">요청 취소</button>`
+      : `<button type="button" class="small primary" data-action="join" data-id="${esc(p.id)}" data-kind="${esc(p.kind)}" data-name="${esc(title)}">참가</button>`;
+    return `<div class="pub-row"><div class="pub-name">${esc(title)}</div>
+      <div class="pub-meta">Owner ${esc(p.owners.join(', ') || '-')} · 항목 ${p.tasks}개</div><div class="row">${action}</div></div>`;
+  };
   const active = sortedActive();
   const q = S.closedQuery.trim().toLowerCase();
   const closed = S.lists.filter(l => l.closed_at)
@@ -446,6 +459,7 @@ function renderSidebar() {
     <div class="side-head"><h2>내 목록</h2><button type="button" class="primary small" data-action="new-list">＋ 새 목록</button></div>
     <div class="section-title">진행 중</div>
     ${active.map(btn).join('') || '<p class="helper">진행 중인 목록이 없습니다.</p>'}
+    ${S.publicLists.length ? `<div class="section-title">가족 공개 목록 · 참가 가능</div>${S.publicLists.map(pubRow).join('')}` : ''}
     <details id="closedBox" ${S.closedOpen ? 'open' : ''}>
       <summary class="section-title">종결된 목록 (${closedTotal})</summary>
       <input id="closedSearch" value="${esc(S.closedQuery)}" placeholder="이름 또는 종결일(2026-11-23) 검색" aria-label="종결 목록 검색">
@@ -466,7 +480,7 @@ function renderMain() {
   const l = cur();
   if (!l) {
     box.innerHTML = `<div class="empty"><div><div class="eyebrow">START</div><strong>아직 참여 중인 목록이 없습니다.</strong>
-      <p>새 목록을 만들거나, 가족에게 목록에 추가해 달라고 요청해 주세요.<br>(내 아이디: <b>${esc(S.me.username)}</b>)</p><br>
+      <p>새 목록을 만들거나, 왼쪽 '가족 공개 목록'에서 [참가]를 눌러 주세요.<br>(내 아이디: <b>${esc(S.me.username)}</b>)</p><br>
       <button type="button" class="primary" data-action="new-list">＋ 첫 목록 만들기</button></div></div>`;
     return;
   }
@@ -483,7 +497,8 @@ function renderMain() {
         </div>
         <div class="members-line">
           <span class="role-badge" title="${esc(ROLE_DESC[l.role])}">내 역할 · ${esc(ROLE_LABEL[l.role])}</span>
-          <button type="button" class="small" data-action="members">멤버</button>
+          <span class="helper">${l.is_public ? '가족 공개' : '비공개'}</span>
+          <button type="button" class="small ${l.pending ? 'primary' : ''}" data-action="members">멤버${l.pending ? ` · 참가 요청 ${l.pending}` : ''}</button>
         </div>
       </div>
       <div class="actions">
@@ -641,6 +656,7 @@ function newListDialog() {
         ${Object.entries(TEMPLATES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('')}</select></div>
     </div>
     ${dateFieldHtml(today(), false)}
+    <p class="hint">새 목록은 <b>가족 공개</b>로 만들어집니다. 다른 가족이 이름을 보고 [참가]할 수 있습니다(일반 목록은 승인 필요, Simple 목록은 바로 Co-owner). 멤버 창에서 비공개로 바꿀 수 있습니다.</p>
     <p class="form-error" role="alert"></p>
     <div class="dialog-foot"><button type="button" data-action="close-dialog">취소</button><button class="primary">만들기</button></div>
   </form>`);
@@ -1118,11 +1134,32 @@ function performDrop(d, target, after) {
 // ---------------------------------------------------------------------
 async function membersDialog() {
   const l = cur();
-  let members;
-  try { members = await rpc('checklist_members', { p_id: l.id }); }
-  catch (e) { toast(e.message, true); return; }
   const p = perms(l);
   const myRole = l.role;
+  const isManager = myRole === 'owner' || myRole === 'co-owner';
+  let members, requests = [];
+  try {
+    [members, requests] = await Promise.all([
+      rpc('checklist_members', { p_id: l.id }),
+      isManager ? rpc('checklist_requests', { p_id: l.id }) : Promise.resolve([]),
+    ]);
+  } catch (e) { toast(e.message, true); return; }
+  const grantable = ['member', 'guest', 'co-owner', ...(myRole === 'owner' ? ['owner'] : [])];
+  const requestRows = requests.map(q => `<div class="member-row">
+      <div class="who"><b>${esc(q.display_name)}</b> <span class="helper">${esc(q.username)} · ${esc(fmtDateTime(q.requested_at))}</span></div>
+      <select data-role-for="${esc(q.user_id)}" aria-label="${esc(q.display_name)} 승인 역할" ${p.manage ? '' : 'disabled'}>
+        ${grantable.map(r => `<option value="${r}">${ROLE_LABEL[r]} · ${ROLE_DESC[r]}</option>`).join('')}</select>
+      <button type="button" class="small primary" data-action="approve" data-user="${esc(q.user_id)}" ${p.manage ? '' : 'disabled'}>승인</button>
+      <button type="button" class="small" data-action="reject" data-user="${esc(q.user_id)}" data-name="${esc(q.display_name)}">거절</button>
+    </div>`).join('');
+  const publicBox = isManager ? `
+    <label class="inline"><input type="checkbox" data-action="set-public" ${l.is_public ? 'checked' : ''}>
+      가족 공개 — 멤버가 아닌 가족도 목록 이름을 보고 참가할 수 있음</label>
+    <p class="hint">${l.kind === 'simple' ? 'Simple 목록은 [참가]하면 바로 Co-owner가 됩니다.' : '일반 목록은 [참가]하면 요청이 오고, Owner·Co-owner가 역할을 정해 승인합니다.'}</p>
+    ${l.kind === 'standard' || requests.length ? `<div class="divider"></div><h3 style="font-size:15px;margin-bottom:6px">참가 요청 (${requests.length})</h3>
+      ${requestRows || '<p class="helper">대기 중인 요청이 없습니다.</p>'}
+      ${requests.length && !p.manage ? '<p class="hint">종결된 목록은 재개한 뒤 승인할 수 있습니다.</p>' : ''}` : ''}
+    <div class="divider"></div>` : '';
   const roleOptions = (selected, allowOwner) => ['owner', 'co-owner', 'member', 'guest']
     .filter(r => allowOwner || r !== 'owner' || r === selected)
     .map(r => `<option value="${r}" ${r === selected ? 'selected' : ''} ${!allowOwner && r === 'owner' ? 'disabled' : ''}>${ROLE_LABEL[r]} · ${ROLE_DESC[r]}</option>`).join('');
@@ -1151,6 +1188,8 @@ async function membersDialog() {
       <button class="primary">추가</button>` : ''}
     </form>` : (l.closed_at ? '<p class="hint" style="margin-top:12px">종결된 목록은 참여자를 바꿀 수 없습니다.</p>' : '');
   openDialog(`멤버 · ${l.data.name}`, `
+    ${publicBox}
+    <h3 style="font-size:15px;margin-bottom:6px">참여자 (${members.length})</h3>
     <div>${rows}</div>
     ${addForm}
     <div class="divider"></div>
@@ -1158,6 +1197,29 @@ async function membersDialog() {
       <span class="hint">권한: Owner 전체 · Co-owner 편집·종결·추가 · Member 완료 체크 · Guest 보기</span>
       <button type="button" class="small" data-action="leave-list">이 목록에서 나가기</button>
     </div>`);
+}
+
+// 가족 공개 목록 참가: 일반 목록은 요청, Simple 목록은 바로 Co-owner
+async function joinList(b) {
+  const simple = b.dataset.kind === 'simple';
+  const msg = simple
+    ? `‘${b.dataset.name}’에 참가할까요?\nSimple 목록이라 바로 Co-owner(편집 가능)로 참여합니다.`
+    : `‘${b.dataset.name}’에 참가를 요청할까요?\nOwner 또는 Co-owner가 역할을 정해 승인하면 참여됩니다.`;
+  if (!confirm(msg)) return;
+  S.pending++;
+  try {
+    const res = await rpc('checklist_join', { p_id: b.dataset.id });
+    if (res.joined) {
+      putList(res.list);
+      S.sel = res.list.id; S.search = ''; S.filter = 'all'; S.picked.clear(); rememberSel();
+      toast('참가했습니다. Co-owner로 편집할 수 있습니다.');
+    } else {
+      toast('참가를 요청했습니다. 승인되면 내 목록에 나타납니다.');
+    }
+    await refreshLists();
+  } catch (e) { toast(toAppError(e).message, true); await refreshLists(); }
+  finally { S.pending--; }
+  renderAll();
 }
 
 async function memberOp(fn, okMessage) {
@@ -1284,6 +1346,9 @@ document.addEventListener('click', async e => {
     case 'reload': await refreshLists(); renderAll(); toast('최신 상태로 불러왔습니다.'); return;
     case 'export': return exportBackup();
     case 'import': return $('#importFile').click();
+    case 'join': return joinList(b);
+    case 'cancel-join':
+      return listAction(async () => { await rpc('checklist_cancel_join', { p_id: b.dataset.id }); await refreshLists(); toast('참가 요청을 취소했습니다.'); });
   }
   if (!l) return;
 
@@ -1301,6 +1366,14 @@ document.addEventListener('click', async e => {
     case 'members': return membersDialog();
     case 'detail': return detailDialog(b.dataset.id);
     case 'toggle': return toggleTask(b.dataset.id);
+  }
+  if (a === 'approve') {
+    const role = $(`select[data-role-for="${CSS.escape(b.dataset.user)}"]`)?.value ?? 'member';
+    return memberOp(() => rpc('checklist_approve', { p_id: l.id, p_user: b.dataset.user, p_role: role }), `승인했습니다 (${ROLE_LABEL[role]}).`);
+  }
+  if (a === 'reject') {
+    if (!confirm(`${b.dataset.name}님의 참가 요청을 거절할까요?`)) return;
+    return memberOp(() => rpc('checklist_reject', { p_id: l.id, p_user: b.dataset.user }), '거절했습니다.');
   }
   if (a === 'remove-member') {
     if (!confirm(`${b.dataset.name}님을 이 목록에서 내보낼까요?`)) return;
@@ -1362,6 +1435,11 @@ document.addEventListener('change', e => {
   if (t.id === 'noDate') { $('#listDate').disabled = t.checked; if (!t.checked && !$('#listDate').value) $('#listDate').value = today(); return; }
   if (t.id === 'dc' && $('#ds')) { $('#ds').innerHTML = subOptions(cur(), t.value); return; }
   if (t.id === 'importFile' && t.files[0]) { const file = t.files[0]; t.value = ''; return importBackup(file); }
+  if (t.dataset.action === 'set-public') {
+    const l = cur(), on = t.checked;
+    return memberOp(async () => { putList(await rpc('checklist_set_public', { p_id: l.id, p_public: on })); },
+      on ? '가족 공개로 바꿨습니다.' : '비공개로 바꿨습니다. 멤버가 아닌 가족에게는 더 이상 보이지 않습니다.');
+  }
   if (t.dataset.action === 'set-role') {
     const l = cur();
     return memberOp(() => rpc('checklist_set_role', { p_id: l.id, p_user: t.dataset.user, p_role: t.value }), '역할을 바꿨습니다.');

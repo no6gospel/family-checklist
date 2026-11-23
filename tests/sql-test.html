@@ -185,11 +185,58 @@ try {
   log(owners >= 1, '두 Owner가 동시에 강등해도 Owner가 1명 이상 남음', `owners=${owners}, 오류=${[x1, x2].filter(x => x.error).map(x => x.error.message).join(',')}`);
   log(true, '참고: PGlite는 단일 연결이라 실제 동시 실행이 아님 — Supabase에서 for update 잠금으로 보장');
 
+  // ---------- 가족 공개 · 참가 요청 (002) ----------
+  const std = (await call(A, 'checklist_create', { p_kind: 'standard', p_data: { name: '공개 일반', date: '', categories: [{ id: 'c', name: '기본', subs: [] }], tasks: [{ id: 't', text: '항목', cat: 'c', sub: '', due: '', done: false, assignees: [] }] } })).data;
+  const sim = (await call(A, 'checklist_create', { p_kind: 'simple', p_data: { name: '공개 장보기', date: '', categories: [], tasks: [] } })).data;
+  log(std.is_public === true && sim.is_public === true, '새 목록은 기본으로 가족 공개');
+  let pub = (await call(C, 'checklist_public_lists', {})).data;
+  log(pub.some(p => p.id === std.id && p.name === '공개 일반' && p.tasks === 1 && p.owners.includes('엄마')) && !('data' in pub[0]),
+    '멤버가 아닌 가족에게 공개 목록의 이름·요약만 보임(내용 없음)');
+  await expectErr('참가 전에는 내용 조회 불가', C, 'checklist_members', { p_id: std.id }, 'not_found');
+  const j1 = await expectOk('일반 목록 참가 → 요청', C, 'checklist_join', { p_id: std.id });
+  log(j1?.requested === true && !(await call(C, 'checklist_lists', {})).data.some(x => x.id === std.id), '요청만으로는 멤버가 아님');
+  pub = (await call(C, 'checklist_public_lists', {})).data;
+  log(pub.find(p => p.id === std.id)?.requested === true, '공개 목록에 승인 대기 표시');
+  log((await call(A, 'checklist_lists', {})).data.find(x => x.id === std.id).pending === 1, 'Owner에게 대기 요청 수 1 표시');
+  await expectErr('Member/비관리자는 요청 목록 조회 불가', C, 'checklist_requests', { p_id: std.id }, 'not_found');
+  await expectOk('Owner가 아빠를 Co-owner로 추가', A, 'checklist_add_member', { p_id: std.id, p_username: 'dad', p_role: 'co-owner' });
+  await expectErr('Co-owner는 요청을 Owner로 승인 불가', Bu, 'checklist_approve', { p_id: std.id, p_user: C, p_role: 'owner' }, 'not_authorized');
+  await expectOk('Co-owner가 요청을 Member로 승인', Bu, 'checklist_approve', { p_id: std.id, p_user: C, p_role: 'member' });
+  const cl = (await call(C, 'checklist_lists', {})).data.find(x => x.id === std.id);
+  log(cl?.role === 'member', '승인 후 민수가 Member로 참여');
+  await expectErr('이미 처리된 요청 다시 승인 불가', A, 'checklist_approve', { p_id: std.id, p_user: C, p_role: 'guest' }, 'request_not_found');
+  await call(D, 'checklist_join', { p_id: std.id });
+  await expectOk('Owner가 요청 거절', A, 'checklist_reject', { p_id: std.id, p_user: D });
+  log(!(await call(D, 'checklist_lists', {})).data.some(x => x.id === std.id), '거절되면 참여되지 않음');
+  await call(D, 'checklist_join', { p_id: std.id });
+  await expectOk('요청자가 스스로 취소', D, 'checklist_cancel_join', { p_id: std.id });
+  log((await call(A, 'checklist_lists', {})).data.find(x => x.id === std.id).pending === 0, '취소 후 대기 요청 0');
+  const js = await expectOk('Simple 목록 참가 → 바로 참여', D, 'checklist_join', { p_id: sim.id });
+  log(js?.joined === true && js?.list?.role === 'co-owner', 'Simple 목록은 자동 Co-owner');
+  await expectErr('이미 멤버면 참가 불가', D, 'checklist_join', { p_id: sim.id }, 'already_member');
+  await expectErr('Member는 공개 설정 변경 불가', C, 'checklist_set_public', { p_id: std.id, p_public: false }, 'not_authorized');
+  await expectOk('Owner가 비공개로 전환', A, 'checklist_set_public', { p_id: std.id, p_public: false });
+  log(!(await call(D, 'checklist_public_lists', {})).data.some(p => p.id === std.id), '비공개 목록은 공개 목록에 안 보임');
+  await expectErr('비공개 목록 참가 불가', D, 'checklist_join', { p_id: std.id }, 'not_public');
+  await call(A, 'checklist_set_public', { p_id: std.id, p_public: true });
+  await call(A, 'checklist_set_closed', { p_id: std.id, p_closed: true });
+  log(!(await call(D, 'checklist_public_lists', {})).data.some(p => p.id === std.id), '종결 목록은 공개 목록에 안 보임');
+  await expectErr('종결 목록 참가 불가', D, 'checklist_join', { p_id: std.id }, 'list_closed');
+  const priv2 = (await B.db.query(`select has_function_privilege('anon', 'public.checklist_join(uuid)', 'execute') a`)).rows[0];
+  log(priv2.a === false, 'anon은 참가 함수 실행 불가');
+
   // ---------- 표시 이름 ----------
   await expectErr('표시 이름 21자 거부', A, 'checklist_set_display_name', { p_name: 'a'.repeat(21) }, 'invalid_display_name');
   await expectOk('표시 이름 변경', A, 'checklist_set_display_name', { p_name: '어머니' });
   const fam = (await call(C, 'checklist_family', {})).data;
   log(fam.length === 5 && fam.some(f => f.display_name === '어머니'), '가족 목록 조회 (5명)');
+
+  // ---------- 기존 DB에 002 업그레이드를 다시 실행해도 오류 없음 ----------
+  try {
+    const mig = await (await fetch('../supabase/migrations/002_public_join.sql', { cache: 'no-store' })).text();
+    await B.db.exec(mig);
+    log(true, '002 마이그레이션 재실행 가능(멱등)');
+  } catch (e) { log(false, '002 마이그레이션 재실행', e.message); }
 } catch (e) {
   log(false, '시험 실행 오류', e.message);
   console.error(e);

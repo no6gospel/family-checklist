@@ -81,6 +81,10 @@ summary.section-title { cursor: pointer; }
 .list-btn.active { background: var(--accent-soft); font-weight: bold; color: var(--accent); }
 .list-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-count { font-size: 12px; color: var(--muted); flex: none; }
+.req-badge { background: var(--warn-bg); color: var(--warn-ink); border-radius: 99px; padding: 1px 7px; font-weight: 700; font-size: 11px; }
+.pub-row { border: 1px dashed var(--line); border-radius: 8px; padding: 9px 10px; margin: 6px 0; }
+.pub-name { font-weight: 600; overflow-wrap: anywhere; }
+.pub-meta { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
 .side-tools { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 14px; display: flex; gap: 7px; flex-wrap: wrap; }
 
 /* ---------- 목록 본문 ---------- */
