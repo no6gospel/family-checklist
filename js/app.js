@@ -397,6 +397,7 @@ function setBusy(form, busy) { $$('button, input, select, textarea', form).forEa
 // ---------------------------------------------------------------------
 function renderAll() {
   closePop();
+  updateBulkFab(false);          // 목록 화면을 그리면서 필요하면 다시 표시
   renderUserbox();
   if (!configured) {
     $('#app').innerHTML = `<div class="auth"><h2>설정이 필요합니다</h2><p class="hint">js/config.js 파일에 Supabase 주소와 anon 키를 넣은 뒤 다시 배포해 주세요. (설치 가이드 5단계)</p></div>`;
@@ -488,6 +489,7 @@ function renderSidebar() {
 function renderMain() {
   const box = $('#main');
   if (!box) return;
+  updateBulkFab(false);
   renderSidebar();
   const l = cur();
   if (!l) {
@@ -501,23 +503,20 @@ function renderMain() {
   const pct = total ? Math.round(done / total * 100) : 0;
   box.innerHTML = `
     <div class="hero">
-      <div>
-        <div class="tag">${l.kind === 'simple' ? 'SIMPLE LIST' : 'STANDARD LIST'}${l.closed_at ? ' / CLOSED' : ''}</div>
-        <div class="title-line">
-          <h2>${esc(listTitle(l))}</h2>
-          ${p.edit ? '<button type="button" class="small" data-action="edit-list">목록 수정</button>' : ''}
-        </div>
-        <div class="members-line">
-          <span class="role-badge" title="${esc(ROLE_DESC[l.role])}">내 역할 · ${esc(ROLE_LABEL[l.role])}${S.me.is_admin ? ' (관리자)' : ''}</span>
-          <span class="helper">${l.is_public ? '가족 공개' : '비공개'}</span>
-          <button type="button" class="small ${l.pending ? 'primary' : ''}" data-action="members">멤버${l.pending ? ` · 참가 요청 ${l.pending}` : ''}</button>
-        </div>
-      </div>
-      <div class="actions">
-        <button type="button" data-action="favorite">${l.favorite ? '★ 즐겨찾기' : '☆ 즐겨찾기'}</button>
-        ${p.edit ? '<button type="button" data-action="duplicate">복제</button>' : ''}
-        ${p.close ? `<button type="button" data-action="toggle-closed">${l.closed_at ? '재개' : '종결'}</button>` : ''}
-        ${p.del ? '<button type="button" class="danger" data-action="final-delete">최종 삭제</button>' : ''}
+      <div class="tag">${l.kind === 'simple' ? 'SIMPLE LIST' : 'STANDARD LIST'}${l.closed_at ? ' / CLOSED' : ''}</div>
+      <!-- 한 줄 흐름: 제목 · 목록 수정 · 역할 · 공개 · 멤버 · (오른쪽) 즐겨찾기 · 복제 · 종결. 좁으면 다음 줄로 -->
+      <div class="hero-line">
+        <h2>${esc(listTitle(l))}</h2>
+        ${p.edit ? '<button type="button" class="small" data-action="edit-list">목록 수정</button>' : ''}
+        <span class="role-badge" title="${esc(ROLE_DESC[l.role])}">내 역할 · ${esc(ROLE_LABEL[l.role])}${S.me.is_admin ? ' (관리자)' : ''}</span>
+        <span class="helper">${l.is_public ? '가족 공개' : '비공개'}</span>
+        <button type="button" class="small ${l.pending ? 'primary' : ''}" data-action="members">멤버${l.pending ? ` · 참가 요청 ${l.pending}` : ''}</button>
+        <span class="actions">
+          <button type="button" class="small" data-action="favorite">${l.favorite ? '★ 즐겨찾기' : '☆ 즐겨찾기'}</button>
+          ${p.edit ? '<button type="button" class="small" data-action="duplicate">복제</button>' : ''}
+          ${p.close ? `<button type="button" class="small" data-action="toggle-closed">${l.closed_at ? '재개' : '종결'}</button>` : ''}
+          ${p.del ? '<button type="button" class="small danger" data-action="final-delete">최종 삭제</button>' : ''}
+        </span>
       </div>
     </div>
     ${l.closed_at ? `<p class="closed-note">${esc(ymd(new Date(l.closed_at)))}에 종결된 목록입니다. 읽기 전용이며, 수정하려면 재개해 주세요.</p>` : ''}
@@ -533,7 +532,7 @@ function renderMain() {
         l.data.categories.every(c => isCollapsed(l.id, c.id)) ? '모두 펼치기' : '모두 접기'}</button>` : ''}
     </div>
     <div id="pickedBar"></div>
-    ${p.edit ? '<p class="helper" style="margin-top:8px">☰ 를 누른 채 끌어서 순서·분류를 바꿉니다(휴대폰도 동일). 여러 항목은 선택 상자를 체크한 뒤 그중 하나의 ☰ 를 끌면 함께 옮겨집니다.</p>' : ''}
+    ${p.edit ? '<p class="helper" style="margin-top:8px">☰ 를 누른 채 끌어서 순서·분류를 바꿉니다. 선택 상자로 여러 항목을 고르면 함께 끌어 옮기거나, 오른쪽 위 버튼으로 한꺼번에 삭제할 수 있습니다.</p>' : ''}
     <div class="groups" id="groups"></div>
     ${p.edit ? '<div style="margin-top:16px"><button type="button" data-action="add-cat">＋ 카테고리 추가</button></div>' : ''}`;
   renderGroups();
@@ -545,12 +544,43 @@ function renderPickedBar() {
   const l = cur();
   const ids = new Set(l?.data.tasks.map(t => t.id));
   [...S.picked].forEach(id => { if (!ids.has(id)) S.picked.delete(id); });
-  bar.innerHTML = S.picked.size && perms(l).edit
+  const active = S.picked.size > 0 && perms(l).edit;
+  bar.innerHTML = active
     ? `<div class="picked-bar"><b>${S.picked.size}개 선택</b>
         <button type="button" class="small primary" data-action="move-picked">선택 항목 이동</button>
         <button type="button" class="small" data-action="clear-picked">선택 해제</button></div>`
     : '';
+  updateBulkFab(active);
 }
+
+// 선택 항목 일괄 삭제 버튼: 화면 오른쪽 위에 고정(스크롤해도 그 자리). #app 밖에 두어 다시 그려도 유지
+function updateBulkFab(show) {
+  let fab = $('#bulkFab');
+  if (!fab) {
+    fab = document.createElement('button');
+    fab.type = 'button';
+    fab.id = 'bulkFab';
+    fab.className = 'bulk-fab';
+    fab.dataset.action = 'bulk-delete';
+    document.body.append(fab);
+  }
+  fab.hidden = !show;
+  if (show) {
+    fab.innerHTML = `🗑 <b>${S.picked.size}</b>`;
+    fab.title = `선택한 ${S.picked.size}개 삭제`;
+    fab.setAttribute('aria-label', `선택한 항목 ${S.picked.size}개 삭제`);
+    positionBulkFab();
+  }
+}
+// 맨 위에서는 머리(내 계정 버튼) 바로 아래, 스크롤하면 화면 맨 위 오른쪽에 붙음
+function positionBulkFab() {
+  const fab = $('#bulkFab');
+  if (!fab || fab.hidden) return;
+  const headerBottom = $('.top')?.getBoundingClientRect().bottom ?? 0;
+  fab.style.top = Math.max(8, Math.round(headerBottom + 6)) + 'px';
+}
+window.addEventListener('scroll', positionBulkFab, { passive: true });
+window.addEventListener('resize', positionBulkFab);
 
 function renderGroups() {
   const box = $('#groups');
@@ -600,11 +630,13 @@ function renderGroups() {
       <div class="group-head">
         <div class="cat-title">
           ${p.edit ? `<span class="grip" data-drag="category" data-id="${esc(cat.id)}" title="끌어서 이동" aria-hidden="true">☰</span>` : ''}
-          <h3><span data-name="cat" data-id="${esc(cat.id)}">${esc(cat.name)}</span>
-            ${p.edit ? `<button type="button" class="link" data-action="rename" data-kind="cat" data-id="${esc(cat.id)}">(수정)</button>` : ''}</h3>
-          <span class="cat-count${catTasks.length && catDone === catTasks.length ? ' all-done' : ''}">항목 ${catTasks.length}개 / 완료 ${catDone}개</span>
-          <button type="button" class="link fold-btn" data-action="fold" data-id="${esc(cat.id)}" aria-expanded="${!folded}"
-            aria-label="${esc(cat.name)} ${folded ? '펼치기' : '접기'}">${folded ? '펼치기 ▾' : '접기 ▴'}</button>
+          <span class="cat-info">
+            <h3><span data-name="cat" data-id="${esc(cat.id)}">${esc(cat.name)}</span>
+              ${p.edit ? `<button type="button" class="link" data-action="rename" data-kind="cat" data-id="${esc(cat.id)}">(수정)</button>` : ''}</h3>
+            <span class="cat-count${catTasks.length && catDone === catTasks.length ? ' all-done' : ''}">항목 ${catTasks.length}개 / 완료 ${catDone}개</span>
+            <button type="button" class="link fold-btn" data-action="fold" data-id="${esc(cat.id)}" aria-expanded="${!folded}"
+              aria-label="${esc(cat.name)} ${folded ? '펼치기' : '접기'}">${folded ? '펼치기 ▾' : '접기 ▴'}</button>
+          </span>
         </div>
         <div class="row cat-tools">
           ${p.edit && l.kind === 'standard' ? `<button type="button" class="small" data-action="add-sub" data-id="${esc(cat.id)}">＋ 하위</button>` : ''}
@@ -1434,6 +1466,20 @@ document.addEventListener('click', async e => {
     case 'rename-cancel': return cancelRename();
     case 'move-picked': return moveDialog();
     case 'clear-picked': S.picked.clear(); return renderGroups();
+    case 'bulk-delete': {
+      const ids = new Set(S.picked);
+      if (!ids.size) return;
+      openPop(b, `선택한 ${ids.size}개 항목을 삭제할까요? 검색·필터로 가려진 항목도 선택돼 있으면 함께 삭제됩니다. 되돌릴 수 없습니다.`, () => {
+        S.picked.clear();
+        edit(d => {
+          const before = d.tasks.length;
+          d.tasks = d.tasks.filter(t => !ids.has(t.id));
+          if (d.tasks.length === before) return false;
+        });
+        toast(`${ids.size}개 항목을 삭제했습니다.`);
+      });
+      return;
+    }
     case 'pick': if (b.checked) S.picked.add(b.dataset.id); else S.picked.delete(b.dataset.id); return renderPickedBar();
   }
 });
